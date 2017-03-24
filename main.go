@@ -262,20 +262,6 @@ func execCmdParseDatabaseBackups() error {
 	return nil
 }
 
-func printAwesomeHelp() {
-	fmt.Println(`
-This is awesome helpful
-
-Usage:
-	nusii_cloner do_awesome [arguments]
-
-Options:
-	-h            # Show this help message and quit
-	-proposal_id  # Proposal id
-
-	`)
-}
-
 func temp() {
 	subCommand := os.Args[1]
 	doAwesomeCommand := flag.NewFlagSet("do_awesome", flag.ExitOnError)
@@ -303,7 +289,6 @@ func temp() {
 
 	if doAwesomeCommand.Parsed() {
 		if *doAwesomeHelp == true {
-			printAwesomeHelp()
 			os.Exit(0)
 		} else if *doAwesomeProposalId == "" {
 			doAwesomeCommand.PrintDefaults()
