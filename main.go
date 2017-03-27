@@ -32,9 +32,11 @@ var (
 var spin *spinner.Spinner
 
 var (
-	app           = kingpin.New("heroku_backups_import", "A command-line heroku backups import")
-	dbNameFlag    = app.Flag("db", "Name of database").Short('d').String()
-	herokuAppFlag = app.Flag("app", "Name of heroku app").Short('a').Required().String()
+	app            = kingpin.New("heroku_backups_import", "A command-line heroku backups import")
+	dbNameFlag     = app.Flag("db", "Name of database").Short('d').String()
+	herokuAppFlag  = app.Flag("app", "Name of heroku app").Short('a').Required().String()
+	backupDateFlag = app.Flag("date", "Date of heroku backup").String()
+	backupIdFlag   = app.Flag("backup-id", "ID of heroku backup").String()
 
 	fetchAndImportCmd = app.Command("import", "Fetch and Import backup into database")
 	showBackupsCmd    = app.Command("show_backups", "Show available backups")
@@ -82,10 +84,12 @@ func parseDatabaseBackups() ([]backup, error) {
 	spin.Start()
 	cmd := exec.Command("heroku", "pg:backups", "-a", herokuApp)
 	var out bytes.Buffer
+	var errOut bytes.Buffer
 	cmd.Stdout = &out
+	cmd.Stderr = &errOut
 	err := cmd.Run()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Heroku pg:backups failed: %s. %v", errOut.String(), err)
 	}
 
 	var backups []backup
@@ -144,7 +148,33 @@ func fetchAndImportBackup() error {
 	fmt.Println("Done!")
 
 	// by default the first one
-	backup := backups[0]
+	var backup backup
+	if len(*backupIdFlag) > 0 {
+		for index, value := range backups {
+			if value.id == *backupIdFlag {
+				backup = backups[index]
+				break
+			}
+		}
+	}
+
+	if backup.id == "" && len(*backupDateFlag) > 0 {
+		for index, value := range backups {
+			if value.date.Format("2006-01-02") == *backupDateFlag {
+				backup = backups[index]
+				break
+			}
+		}
+	}
+	if backup.id == "" {
+		if len(*backupIdFlag) > 0 {
+			fmt.Println("Couldn't find backup with id:", *backupIdFlag)
+		}
+		if len(*backupDateFlag) > 0 {
+			fmt.Println("Couldn't find backup with date:", *backupDateFlag)
+		}
+		backup = backups[0]
+	}
 	fmt.Printf("Using backup: %s %s\n", backup.id, backup.date)
 
 	backupUrl, err := getBackupUrl(backup)
@@ -194,7 +224,6 @@ func fetchAndImportBackup() error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("Dump file deleted")
 	return nil
 }
 
