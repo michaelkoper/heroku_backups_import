@@ -19,9 +19,7 @@ import (
 )
 
 const (
-	DB_USER     = "postgres"
-	DB_PASSWORD = "postgres"
-	DB_NAME     = "heroku_backups_import"
+	DB_NAME = "heroku_backups_import"
 )
 
 var (
@@ -32,14 +30,14 @@ var (
 var spin *spinner.Spinner
 
 var (
-	app            = kingpin.New("heroku_backups_import", "A command-line heroku backups import")
+	app            = kingpin.New("heroku_backups_import", "A command-line interface tool to easily import heroku backups into a local database")
 	dbNameFlag     = app.Flag("db", "Name of database").Short('d').String()
 	herokuAppFlag  = app.Flag("app", "Name of heroku app").Short('a').Required().String()
 	backupDateFlag = app.Flag("date", "Date of heroku backup").String()
-	backupIdFlag   = app.Flag("backup-id", "ID of heroku backup").String()
+	backupIdFlag   = app.Flag("backup-id", "ID of a heroku backup").String()
 
-	fetchAndImportCmd = app.Command("import", "Fetch and Import backup into database")
-	showBackupsCmd    = app.Command("show_backups", "Show available backups")
+	fetchAndImportCmd = app.Command("import", "Fetch and Import Heroku backup into a local database")
+	showBackupsCmd    = app.Command("show_backups", "Show available Heroku backups")
 )
 
 func main() {
@@ -47,6 +45,7 @@ func main() {
 
 	var err error
 
+	kingpin.Version("0.0.1")
 	cmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	if len(*dbNameFlag) > 0 {
