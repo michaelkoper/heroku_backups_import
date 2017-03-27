@@ -3,8 +3,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"database/sql"
-	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -14,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	kingpin "gopkg.in/alecthomas/kingpin.v2"
+
 	"github.com/briandowns/spinner"
 	_ "github.com/lib/pq"
 )
@@ -21,44 +21,49 @@ import (
 const (
 	DB_USER     = "postgres"
 	DB_PASSWORD = "postgres"
-	DB_NAME     = "nusii_cloner_development"
+	DB_NAME     = "heroku_backups_import"
+)
+
+var (
+	dbName    string = DB_NAME
+	herokuApp string
 )
 
 var spin *spinner.Spinner
 
+var (
+	app           = kingpin.New("heroku_backups_import", "A command-line heroku backups import")
+	dbNameFlag    = app.Flag("db", "Name of database").Short('d').String()
+	herokuAppFlag = app.Flag("app", "Name of heroku app").Short('a').Required().String()
+
+	fetchAndImportCmd = app.Command("import", "Fetch and Import backup into database")
+	showBackupsCmd    = app.Command("show_backups", "Show available backups")
+)
+
 func main() {
 	spin = spinner.New(spinner.CharSets[24], 100*time.Millisecond)
-	// Verify that list subcommand is given
-	if len(os.Args) < 2 {
-		fmt.Println("Please provide a subcommand")
-		os.Exit(1)
-	}
-
-	subCommand := os.Args[1]
 
 	var err error
 
-	// TODO return the errors in here instead of in the function
-	switch subCommand {
-	case "create_local_db":
-		err = execCmdCreateLocalDb()
-	case "drop_local_db":
-		err = execCmdDropLocalDb()
-	case "parse_database_backups":
-		err = execCmdParseDatabaseBackups()
-	case "fetch_and_import_backup":
+	cmd := kingpin.MustParse(app.Parse(os.Args[1:]))
+
+	if len(*dbNameFlag) > 0 {
+		dbName = *dbNameFlag
+	}
+	if len(*herokuAppFlag) > 0 {
+		herokuApp = *herokuAppFlag
+	}
+
+	switch cmd {
+	case fetchAndImportCmd.FullCommand():
 		err = fetchAndImportBackup()
-	default:
-		flag.PrintDefaults()
-		fmt.Printf("Subcommand %s is not in the list", subCommand)
-		os.Exit(1)
+	case showBackupsCmd.FullCommand():
+		err = execCmdParseDatabaseBackups()
 	}
 
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	return
 
 }
 
@@ -75,7 +80,7 @@ const herokuTime = "2006-01-02 15:04:05"
 
 func parseDatabaseBackups() ([]backup, error) {
 	spin.Start()
-	cmd := exec.Command("heroku", "pg:backups", "-a", "nusii2")
+	cmd := exec.Command("heroku", "pg:backups", "-a", herokuApp)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
@@ -105,7 +110,7 @@ func parseDatabaseBackups() ([]backup, error) {
 }
 
 func getBackupUrl(backup backup) (string, error) {
-	cmd := exec.Command("heroku", "pg:backups", "public-url", backup.id, "-a", "nusii2")
+	cmd := exec.Command("heroku", "pg:backups", "public-url", backup.id, "-a", herokuApp)
 	cmdResult, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", err
@@ -118,7 +123,7 @@ func getBackupUrl(backup backup) (string, error) {
 }
 
 func restoreDump(fileName string) error {
-	cmd := exec.Command("pg_restore", "-O", "-d", DB_NAME, "./"+fileName)
+	cmd := exec.Command("pg_restore", "-O", "-c", "-d", dbName, "./"+fileName)
 
 	err := cmd.Run()
 	if err != nil {
@@ -142,24 +147,13 @@ func fetchAndImportBackup() error {
 	backup := backups[0]
 	fmt.Printf("Using backup: %s %s\n", backup.id, backup.date)
 
-	var backupUrl string
-	backupUrl, err = getBackupUrl(backup)
+	backupUrl, err := getBackupUrl(backup)
 	if err != nil {
 		return err
 	}
 
 	// download the file and save it locally
 	fileName := "dump.sql"
-
-	_, err = os.Stat(fileName)
-
-	// Delete file if exist
-	if os.IsExist(err) {
-		err = os.Remove(fileName)
-		if err != nil {
-			return err
-		}
-	}
 
 	// Create file
 	var output *os.File
@@ -204,50 +198,6 @@ func fetchAndImportBackup() error {
 	return nil
 }
 
-func execCmdCreateLocalDb() error {
-	dbinfo := fmt.Sprintf("user=%s password=%s sslmode=disable", DB_USER, DB_PASSWORD)
-	db, err := sql.Open("postgres", dbinfo)
-
-	if err != nil {
-		return err
-	}
-
-	_, err = db.Query("CREATE DATABASE nusii_cloner_development")
-	if err != nil {
-		if strings.Contains(err.Error(), "already exists") {
-			fmt.Println("database nusii_cloner_development already exists")
-			os.Exit(0)
-		}
-		return err
-	}
-
-	fmt.Println("database nusii_cloner_development is created")
-
-	return nil
-}
-
-func execCmdDropLocalDb() error {
-	dbinfo := fmt.Sprintf("user=%s password=%s sslmode=disable", DB_USER, DB_PASSWORD)
-
-	db, err := sql.Open("postgres", dbinfo)
-	if err != nil {
-		return err
-	}
-
-	_, err = db.Query("DROP DATABASE nusii_cloner_development")
-	if err != nil {
-		if strings.Contains(err.Error(), "does not exist") {
-			fmt.Println("database nusii_cloner_development does not exists")
-			os.Exit(0)
-		}
-		return err
-	}
-
-	fmt.Println("database nusii_cloner_development is deleted")
-
-	return nil
-}
-
 func execCmdParseDatabaseBackups() error {
 	backups, err := parseDatabaseBackups()
 
@@ -260,42 +210,4 @@ func execCmdParseDatabaseBackups() error {
 	}
 
 	return nil
-}
-
-func temp() {
-	subCommand := os.Args[1]
-	doAwesomeCommand := flag.NewFlagSet("do_awesome", flag.ExitOnError)
-
-	doAwesomeProposalId := doAwesomeCommand.String("proposal_id", "", "Proposal Id (Required)")
-	doAwesomeHelp := doAwesomeCommand.Bool("h", false, "Awesome Help")
-	// doAwesomeAccountId := doAwesomeCommand.String("account_id", "", "Account Id")
-
-	//fmt.Printf("proposalId: %s, accountId: %s", *proposalId, *accountId)
-
-	// Verify that list subcommand is given
-	if len(os.Args) < 2 {
-		fmt.Println("Please provide a subcommand")
-		os.Exit(1)
-	}
-
-	switch subCommand {
-	case "do_awesome":
-		doAwesomeCommand.Parse(os.Args[2:])
-	default:
-		flag.PrintDefaults()
-		fmt.Printf("Subcommand %s is not in the list", subCommand)
-		os.Exit(1)
-	}
-
-	if doAwesomeCommand.Parsed() {
-		if *doAwesomeHelp == true {
-			os.Exit(0)
-		} else if *doAwesomeProposalId == "" {
-			doAwesomeCommand.PrintDefaults()
-			os.Exit(1)
-		}
-
-		fmt.Printf("doing awesome command with proposal id: %s", *doAwesomeProposalId)
-	}
-
 }
