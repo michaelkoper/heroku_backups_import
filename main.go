@@ -313,6 +313,10 @@ func execCmdFlushDatabase() error {
 
 	err = transaction.Commit()
 
+	if err != nil {
+		return err
+	}
+
 	fmt.Println("Database is flushed")
 	return nil
 }
